@@ -1,0 +1,14 @@
+[Unit]
+Description=Echo Speech-to-Text Daemon
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/apps/speech-daemon/speech_daemon.py
+Restart=always
+RestartSec=5
+Environment=DISPLAY=:0
+Environment=WAYLAND_DISPLAY=wayland-0
+
+[Install]
+WantedBy=default.target

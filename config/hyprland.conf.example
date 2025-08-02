@@ -1,0 +1,11 @@
+# Echo Speech-to-Text Configuration for Hyprland
+
+# Auto-start daemon
+exec-once = ~/apps/speech-daemon/start_daemon.sh
+
+# Optional: Direct keybinding (if daemon doesn't work)
+bind = SUPER, M, exec, ~/apps/speech-to-text/quick_transcribe.sh
+
+# Alternative keybindings to try
+# bind = SUPER, T, exec, ~/apps/speech-to-text/quick_transcribe.sh
+# bind = , F12, exec, ~/apps/speech-to-text/quick_transcribe.sh
