@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Echo - Speech-to-Text Installation Script
+# Echo Speech-to-Text Installation v0.2
 set -e
 
 GREEN='\033[0;32m'
@@ -16,49 +16,36 @@ log_success() {
     echo -e "${GREEN}[SUCCESS]${NC} $1"
 }
 
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-echo "🎤 Echo - Fast Speech-to-Text"
-echo "============================="
-echo "Local AI-powered speech transcription"
+echo "🎤 Echo Speech-to-Text v0.2"
+echo "=========================="
+echo "Enhanced keybinding support + multiple activation methods"
 echo
 
-# Check system
-if ! command -v git &> /dev/null; then
-    echo "❌ Git not found. Install with: sudo pacman -S git"
-    exit 1
-fi
-
-# Install system dependencies
+# System dependencies
 log_info "Installing system dependencies..."
 if command -v pacman &> /dev/null; then
     sudo pacman -S --noconfirm git cmake make gcc pkgconf alsa-utils \
         libnotify xclip wl-clipboard python python-pip
-elif command -v apt &> /dev/null; then
-    sudo apt update
-    sudo apt install -y git cmake build-essential pkg-config \
-        alsa-utils libnotify-bin xclip wl-clipboard python3 python3-pip
 else
-    log_warning "Unsupported package manager. Install dependencies manually."
+    log_info "Please install: git cmake make gcc alsa-utils libnotify python3 pip"
 fi
 
-# Install Python packages
+# Python dependencies
 log_info "Installing Python packages..."
-pip install --user pynput
+pip install --user pynput keyboard
 
-# Create app directories
-mkdir -p ~/apps/speech-to-text ~/apps/speech-daemon
+# Create directories
+mkdir -p ~/apps/{speech-to-text,speech-daemon}
 
-# Copy scripts
+# Copy files
+log_info "Installing Echo components..."
 cp scripts/quick_transcribe.sh ~/apps/speech-to-text/
-cp daemon/* ~/apps/speech-daemon/
-chmod +x ~/apps/speech-to-text/quick_transcribe.sh
-chmod +x ~/apps/speech-daemon/*.sh ~/apps/speech-daemon/*.py
+cp daemon/speech_daemon_v2.py ~/apps/speech-daemon/speech_daemon.py
+cp daemon/*.sh ~/apps/speech-daemon/
+chmod +x ~/apps/speech-to-text/*.sh ~/apps/speech-daemon/*
 
 # Build whisper.cpp
-log_info "Building whisper.cpp..."
+log_info "Building whisper.cpp (this may take a few minutes)..."
 cd ~/apps/speech-to-text
 
 if [ ! -d "whisper.cpp" ]; then
@@ -70,16 +57,31 @@ git pull
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release --parallel $(nproc)
 
-# Download model
 if [ ! -f "models/ggml-base.en.bin" ]; then
     ./models/download-ggml-model.sh base.en
 fi
 
-log_success "Installation complete!"
+cd ~/echo
+
+# System integration
+log_info "Setting up system integration..."
+./scripts/integrate_echo.sh
+
+log_success "Echo v0.2 installation complete!"
 
 echo
-echo "🎤 Usage:"
-echo "  Start daemon: ~/apps/speech-daemon/start_daemon.sh"
-echo "  Press F12 from any application to record speech"
-echo "  Or run directly: ~/apps/speech-to-text/quick_transcribe.sh"
-
+echo "🎉 What's new in v0.2:"
+echo "======================="
+echo "✅ Multiple activation methods"
+echo "✅ Better error handling" 
+echo "✅ Enhanced debugging"
+echo "✅ Fallback mechanisms"
+echo "✅ System integration"
+echo
+echo "🎤 Try these activation methods:"
+echo "   1. F12 (global hotkey)"
+echo "   2. Super+M (Hyprland)"
+echo "   3. echo-speak (command)"
+echo "   4. Direct: echo-direct"
+echo
+echo "🚀 Start daemon: echo-start"

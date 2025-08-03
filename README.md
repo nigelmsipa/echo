@@ -1,157 +1,180 @@
-# 🎤 Echo - Fast Speech-to-Text
+# 🎤 Echo - Fast Speech-to-Text v0.2
 
-Ultra-fast local speech transcription using whisper.cpp with global hotkey support.
+Ultra-fast local speech transcription with **multiple activation methods** and enhanced reliability.
 
-## ✨ Features
+## 🆕 What's New in v0.2
 
-- **🚀 Ultra-fast transcription** - Uses optimized whisper.cpp
-- **🌐 Global hotkey** - Press F12 from any application  
-- **📋 Auto-clipboard** - Transcribed text automatically copied
-- **🔒 100% local** - No internet required, privacy-focused
-- **🎯 Multi-desktop** - Works on Hyprland, GNOME, KDE, etc.
-- **⚡ GPU accelerated** - Supports NVIDIA CUDA and AMD ROCm
+- **🎯 Multiple activation methods** - No more keybinding issues!
+- **🔧 Enhanced error handling** - Better debugging and recovery
+- **⚡ Improved performance** - Faster transcription and response  
+- **🖥️ Better desktop integration** - Works across all environments
+- **📋 Fallback mechanisms** - Always have a way to activate Echo
 
-## 🚀 Quick Start
+## 🚀 Installation
 
 ```bash
-# Clone and install
 git clone https://github.com/nigelmsipa/echo.git
 cd echo
 ./install.sh
-
-# Start the daemon
-~/apps/speech-daemon/start_daemon.sh
-
-# Use it!
-# Press F12 from any app → speak for 5 seconds → text in clipboard
 ```
+
+## 🎤 Activation Methods
+
+Echo now provides **5 different ways** to activate speech transcription:
+
+### Method 1: Global Hotkeys 🌐
+- **F12** - Primary global hotkey
+- **Ctrl+Shift+Space** - Alternative
+- **Alt+Space** - Alternative
+
+### Method 2: Desktop Shortcuts ⌨️
+- **Super+M** - Hyprland/KDE
+- **Super+F12** - File trigger method
+
+### Method 3: Command Line 💻
+```bash
+echo-speak        # Activate Echo
+echo-direct       # Direct transcription  
+echo-start        # Start daemon
+echo-stop         # Stop daemon
+```
+
+### Method 4: Application Menu 📱
+- Search **"Echo Speech"** in your app launcher
+- Click to activate transcription
+
+### Method 5: Manual Trigger 🔧
+```bash
+echo trigger > /tmp/echo_trigger  # Activate via file
+```
+
+## ✨ Features
+
+- **🚀 Ultra-fast** - Optimized whisper.cpp transcription
+- **🔒 100% local** - No internet required, privacy-focused
+- **🎯 Multi-desktop** - Works on Hyprland, GNOME, KDE, etc.
+- **📋 Auto-clipboard** - Text automatically copied
+- **⚡ GPU accelerated** - NVIDIA CUDA / AMD ROCm support
+- **🛠️ Multiple fallbacks** - Always works, even if hotkeys fail
 
 ## 📖 Usage
 
-### Method 1: Global Daemon (Recommended)
-1. **Start daemon:** `~/apps/speech-daemon/start_daemon.sh`
-2. **Press F12** from any application (browser, terminal, IDE, etc.)
+1. **Start Echo daemon:**
+   ```bash
+   echo-start
+   ```
+
+2. **Activate transcription** (choose any method):
+   - Press **F12** from any application
+   - Run **echo-speak** in terminal
+   - Use **Super+M** in Hyprland
+   - Search "Echo Speech" in app launcher
+
 3. **Speak clearly** for 5 seconds
+
 4. **Text auto-copies** to clipboard
+
 5. **Paste anywhere** with Ctrl+V
-
-### Method 2: Direct Script
-```bash
-# Record for 5 seconds (default)
-~/apps/speech-to-text/quick_transcribe.sh
-
-# Record for custom duration
-~/apps/speech-to-text/quick_transcribe.sh 10
-```
 
 ## 🎯 Perfect For
 
-- **Coding** - Voice comments and documentation
-- **Writing** - Quick notes and dictation  
+- **Development** - Voice comments and documentation
+- **Writing** - Dictation and note-taking
 - **Accessibility** - Hands-free text input
-- **Multilingual** - Supports many languages
-- **Note-taking** - Instant voice memos
+- **Productivity** - Quick voice memos
+- **Languages** - Multilingual transcription
 
 ## 🔧 System Requirements
 
-- **OS:** Linux (Arch, Ubuntu, Fedora, etc.)
-- **Audio:** Working microphone
-- **CPU:** Multi-core recommended for speed
-- **GPU:** Optional (NVIDIA/AMD for acceleration)
-- **RAM:** 2GB+ recommended
+- **Linux** (Arch, Ubuntu, Fedora, etc.)
+- **Working microphone** (USB, built-in, Bluetooth)
+- **2GB+ RAM** recommended
+- **Multi-core CPU** for best performance
+
+## 📊 Performance
+
+- **Transcription Speed:** 0.5-2 seconds for 5-second audio
+- **Accuracy:** High-quality with whisper.cpp
+- **Resource Usage:** ~500MB RAM during transcription
+- **Hardware Support:** CPU optimized, GPU accelerated
+
+## 🎤 Tested Hardware
+
+- ✅ **HyperX SoloCast** - Excellent quality
+- ✅ **Built-in laptop mics** - Good quality
+- ✅ **USB headsets** - Reliable
+- ✅ **Bluetooth headphones** - Works well
+
+## 🛠️ Troubleshooting
+
+### Global Hotkeys Not Working?
+Try alternative activation methods:
+```bash
+echo-speak           # Command line
+Super+M             # Desktop shortcut
+echo trigger > /tmp/echo_trigger  # File trigger
+```
+
+### Audio Issues?
+```bash
+# Test microphone
+parecord test.wav   # Speak, then Ctrl+C
+paplay test.wav     # Should hear your voice
+
+# Check devices
+pactl list sources short
+
+# Increase volume  
+pactl set-source-volume @DEFAULT_SOURCE@ 80%
+```
+
+### Daemon Not Starting?
+```bash
+# Install dependencies
+pip install --user pynput keyboard
+
+# Check for errors
+python3 ~/echo/daemon/speech_daemon_v2.py
+
+# Direct fallback
+echo-direct
+```
 
 ## 📁 Project Structure
 
 ```
 echo/
-├── install.sh              # One-click installation
+├── install.sh                 # One-click installation
 ├── scripts/
-│   └── quick_transcribe.sh  # Direct transcription script
+│   ├── quick_transcribe.sh    # Direct transcription
+│   ├── echo_activate.sh       # Manual activation
+│   └── integrate_echo.sh      # System integration
 ├── daemon/
-│   ├── speech_daemon.py     # Background daemon
-│   ├── start_daemon.sh      # Start daemon
-│   └── stop_daemon.sh       # Stop daemon
+│   ├── speech_daemon_v2.py    # Enhanced daemon
+│   ├── start_daemon.sh        # Start daemon
+│   └── stop_daemon.sh         # Stop daemon
 └── docs/
-    └── troubleshooting.md   # Common issues and fixes
+    └── troubleshooting.md     # Detailed troubleshooting
 ```
-
-## 🛠️ How It Works
-
-1. **Audio Recording** - Uses PulseAudio/PipeWire/ALSA
-2. **AI Transcription** - whisper.cpp (C++ implementation)
-3. **Global Hotkeys** - Python pynput for F12 detection  
-4. **Clipboard Integration** - wl-clipboard (Wayland) / xclip (X11)
-5. **Desktop Notifications** - libnotify for status updates
-
-## ⚡ Performance
-
-- **Transcription Speed:** ~0.5-2 seconds for 5-second audio
-- **CPU Usage:** Optimized for multi-core systems
-- **Memory:** ~500MB during transcription
-- **First Run:** Slower due to model loading
-
-## 🎤 Supported Hardware
-
-- **USB Microphones** - HyperX, Blue Yeti, etc.
-- **Laptop Built-in** - Most laptop microphones
-- **Headset Mics** - Gaming and office headsets
-- **Bluetooth Audio** - Wireless headphones with mic
-
-## 🔧 Configuration
-
-### Desktop Environment Integration
-
-**Hyprland:**
-```bash
-# Auto-starts with system
-exec-once = ~/apps/speech-daemon/start_daemon.sh
-```
-
-**GNOME/KDE:**
-```bash
-# Add to startup applications
-~/apps/speech-daemon/start_daemon.sh
-```
-
-### Custom Keybindings
-Edit `daemon/speech_daemon.py` to change from F12 to other keys.
-
-## 🐛 Current Status
-
-**✅ Working:**
-- Speech transcription engine
-- Audio recording (HyperX SoloCast tested)
-- Direct script execution
-- Whisper.cpp compilation and model download
-
-**🔧 In Progress:**
-- Global F12 hotkey daemon
-- Consistent keybinding activation
-- Desktop environment integration
-
-**📋 Known Issues:**
-- Daemon may not respond to F12 on some systems
-- First transcription slower (model loading)
-- pynput dependency issues on some Linux distros
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature-name`
-3. Commit changes: `git commit -am 'Add feature'`
-4. Push to branch: `git push origin feature-name`
-5. Submit pull request
+Echo is open source! We welcome:
+- 🐛 **Bug reports** - Found an issue?
+- 💡 **Feature requests** - Have an idea?
+- 🔧 **Pull requests** - Want to contribute code?
+- 📖 **Documentation** - Help improve the docs
 
 ## 📄 License
 
-MIT License - see LICENSE file for details.
+MIT License - Free for personal and commercial use.
 
 ## 🙏 Acknowledgments
 
-- **whisper.cpp** - Georgi Gerganov's excellent C++ implementation
+- **whisper.cpp** - Georgi Gerganov's C++ implementation
 - **OpenAI Whisper** - Original speech recognition model
-- **pynput** - Global keyboard detection
+- **Linux community** - Testing and feedback
 
 ---
 
-**Echo** - Fast, local, privacy-focused speech-to-text for Linux
+**Echo v0.2** - Reliable, fast, local speech-to-text for everyone! 🎤⚡
