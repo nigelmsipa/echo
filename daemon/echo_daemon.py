@@ -109,9 +109,7 @@ class EchoDaemon:
             "record_channels": 1,
             "transcription_timeout": 30,
             "hotkeys": {
-                "f12": True,
-                "ctrl+shift+space": True,
-                "alt+space": True
+                "ctrl": True
             },
             "notifications": True,
             "clipboard": True,
@@ -430,12 +428,16 @@ class EchoDaemon:
         
         self.logger.info("Starting keyboard library listener...")
         try:
-            if self.config['hotkeys']['f12']:
-                kb.add_hotkey('f12', lambda: threading.Thread(target=self.record_and_transcribe, daemon=True).start())
-            if self.config['hotkeys']['ctrl+shift+space']:
-                kb.add_hotkey('ctrl+shift+space', lambda: threading.Thread(target=self.record_and_transcribe, daemon=True).start())
-            if self.config['hotkeys']['alt+space']:
-                kb.add_hotkey('alt+space', lambda: threading.Thread(target=self.record_and_transcribe, daemon=True).start())
+            # Register hotkeys based on configuration
+            for hotkey_name, enabled in self.config['hotkeys'].items():
+                if enabled:
+                    if hotkey_name == 'ctrl':
+                        # Map 'ctrl' to 'ctrl+space' for better usability
+                        kb.add_hotkey('ctrl+space', lambda: threading.Thread(target=self.record_and_transcribe, daemon=True).start())
+                        self.logger.info(f"Registered hotkey: ctrl+space")
+                    else:
+                        kb.add_hotkey(hotkey_name, lambda: threading.Thread(target=self.record_and_transcribe, daemon=True).start())
+                        self.logger.info(f"Registered hotkey: {hotkey_name}")
             
             self.logger.info("Hotkeys registered successfully")
             kb.wait('esc')

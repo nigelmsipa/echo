@@ -1,0 +1,162 @@
+#!/bin/bash
+# Echo Speech-to-Text GUI Launcher and Status Manager
+
+DAEMON_SCRIPT="/home/nigel/echo/daemon/echo_daemon.py"
+PID_FILE="/tmp/echo_daemon.pid"
+STATUS_FILE="/tmp/echo_status"
+
+# Function to check if daemon is running
+is_running() {
+    if [ -f "$PID_FILE" ]; then
+        local pid=$(cat "$PID_FILE")
+        if ps -p "$pid" > /dev/null 2>&1; then
+            return 0
+        else
+            rm -f "$PID_FILE"
+            return 1
+        fi
+    fi
+    return 1
+}
+
+# Function to start daemon
+start_daemon() {
+    if is_running; then
+        notify-send "Echo" "Already running!" -i microphone-sensitivity-high
+        return 0
+    fi
+    
+    notify-send "Echo" "Starting speech-to-text daemon..." -i microphone-sensitivity-medium
+    python3 "$DAEMON_SCRIPT" start
+    
+    # Wait a moment and check if it started
+    sleep 2
+    if is_running; then
+        echo "active" > "$STATUS_FILE"
+        notify-send "Echo" "Daemon started! Touch /tmp/echo_trigger to activate." -i microphone-sensitivity-high -t 5000
+        return 0
+    else
+        notify-send "Echo" "Failed to start daemon!" -i dialog-error
+        return 1
+    fi
+}
+
+# Function to stop daemon
+stop_daemon() {
+    if ! is_running; then
+        notify-send "Echo" "Not running!" -i microphone-sensitivity-low
+        return 0
+    fi
+    
+    python3 "$DAEMON_SCRIPT" stop
+    rm -f "$STATUS_FILE"
+    notify-send "Echo" "Daemon stopped" -i microphone-sensitivity-low
+}
+
+# Function to toggle daemon
+toggle_daemon() {
+    if is_running; then
+        stop_daemon
+    else
+        start_daemon
+    fi
+}
+
+# Function to get status for waybar
+get_status() {
+    if is_running; then
+        echo '{"text": "🎤", "tooltip": "Echo daemon active - Touch /tmp/echo_trigger", "class": "active"}'
+    else
+        echo '{"text": "🎤", "tooltip": "Echo daemon inactive", "class": "inactive"}'
+    fi
+}
+
+# Function to trigger recording
+trigger_recording() {
+    if is_running; then
+        touch /tmp/echo_trigger
+        notify-send "Echo" "Recording triggered!" -i microphone-sensitivity-high -t 2000
+    else
+        notify-send "Echo" "Daemon not running!" -i dialog-error
+    fi
+}
+
+# Main command handling
+case "$1" in
+    start)
+        start_daemon
+        ;;
+    stop)
+        stop_daemon
+        ;;
+    toggle)
+        toggle_daemon
+        ;;
+    status)
+        get_status
+        ;;
+    trigger)
+        trigger_recording
+        ;;
+    gui)
+        # Launch GUI mode with zenity
+        if command -v zenity > /dev/null; then
+            if is_running; then
+                choice=$(zenity --list --radiolist --title="Echo Speech-to-Text" \
+                    --text="Daemon is currently RUNNING" \
+                    --column="Select" --column="Action" \
+                    TRUE "Trigger Recording" \
+                    FALSE "Stop Daemon" \
+                    FALSE "View Logs" 2>/dev/null)
+                
+                case "$choice" in
+                    "Trigger Recording")
+                        trigger_recording
+                        ;;
+                    "Stop Daemon")
+                        stop_daemon
+                        ;;
+                    "View Logs")
+                        if command -v gnome-terminal > /dev/null; then
+                            gnome-terminal -- tail -f /home/nigel/.local/share/echo/daemon.log
+                        else
+                            xterm -e "tail -f /home/nigel/.local/share/echo/daemon.log" &
+                        fi
+                        ;;
+                esac
+            else
+                choice=$(zenity --list --radiolist --title="Echo Speech-to-Text" \
+                    --text="Daemon is currently STOPPED" \
+                    --column="Select" --column="Action" \
+                    TRUE "Start Daemon" \
+                    FALSE "View Logs" 2>/dev/null)
+                
+                case "$choice" in
+                    "Start Daemon")
+                        start_daemon
+                        ;;
+                    "View Logs")
+                        if command -v gnome-terminal > /dev/null; then
+                            gnome-terminal -- tail -f /home/nigel/.local/share/echo/daemon.log
+                        else
+                            xterm -e "tail -f /home/nigel/.local/share/echo/daemon.log" &
+                        fi
+                        ;;
+                esac
+            fi
+        else
+            # Fallback to terminal interface
+            toggle_daemon
+        fi
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|toggle|status|trigger|gui}"
+        echo "  start   - Start the daemon"
+        echo "  stop    - Stop the daemon"
+        echo "  toggle  - Toggle daemon on/off"
+        echo "  status  - Get JSON status for waybar"
+        echo "  trigger - Trigger speech recording"
+        echo "  gui     - Launch GUI interface"
+        exit 1
+        ;;
+esac

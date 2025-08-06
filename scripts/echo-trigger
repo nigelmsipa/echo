@@ -1,0 +1,12 @@
+#!/bin/bash
+# Simple Echo trigger script - bind this to any hotkey in your WM
+
+# Check if daemon is running
+if ! pgrep -f "echo_daemon.py" > /dev/null; then
+    notify-send "Echo" "Daemon not running! Click 🎤 in Waybar to start." -i dialog-warning
+    exit 1
+fi
+
+# Trigger recording
+touch /tmp/echo_trigger
+notify-send "Echo" "🎤 Recording..." -i microphone-sensitivity-high -t 1500

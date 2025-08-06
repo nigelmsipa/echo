@@ -5,8 +5,7 @@ Wants=network.target
 
 [Service]
 Type=forking
-User=%i
-Group=%i
+# User and Group not needed for user services
 ExecStart=/home/nigel/echo/daemon/echo_daemon.py start
 ExecStop=/home/nigel/echo/daemon/echo_daemon.py stop
 ExecReload=/bin/kill -HUP $MAINPID
@@ -16,19 +15,12 @@ RestartSec=5
 TimeoutStartSec=30
 TimeoutStopSec=30
 
-# Security settings
+# Security settings (simplified for user service)
 NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=false
-ReadWritePaths=/tmp /home/%i/.config/echo /home/%i/.local/share/echo
-PrivateTmp=false
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
 
 # Environment
 Environment=DISPLAY=:0
-Environment=PULSE_SERVER=unix:/run/user/%i/pulse/native
+Environment=PULSE_SERVER=unix:/run/user/1000/pulse/native
 
 [Install]
 WantedBy=default.target
