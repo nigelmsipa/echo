@@ -1,0 +1,153 @@
+#!/bin/bash
+# Echo Daemon Management Script
+
+DAEMON_SCRIPT="/home/nigel/echo/daemon/echo_daemon.py"
+SERVICE_FILE="/home/nigel/echo/config/echo-daemon.service"
+USER_SERVICE_DIR="$HOME/.config/systemd/user"
+
+show_help() {
+    echo "Echo Daemon Management"
+    echo "====================="
+    echo "Usage: echo-daemon [COMMAND]"
+    echo ""
+    echo "Commands:"
+    echo "  start       Start the daemon"
+    echo "  stop        Stop the daemon"
+    echo "  restart     Restart the daemon"
+    echo "  status      Show daemon status"
+    echo "  logs        Show daemon logs"
+    echo "  install     Install systemd service"
+    echo "  uninstall   Remove systemd service"
+    echo "  enable      Enable auto-start on login"
+    echo "  disable     Disable auto-start"
+    echo "  config      Edit configuration"
+    echo "  test        Test transcription"
+    echo ""
+    echo "Examples:"
+    echo "  echo-daemon start     # Start daemon"
+    echo "  echo-daemon logs      # View logs"
+    echo "  echo-daemon install   # Install as user service"
+}
+
+install_service() {
+    echo "Installing Echo daemon as user service..."
+    
+    # Create user systemd directory
+    mkdir -p "$USER_SERVICE_DIR"
+    
+    # Copy service file
+    cp "$SERVICE_FILE" "$USER_SERVICE_DIR/echo-daemon.service"
+    
+    # Reload systemd
+    systemctl --user daemon-reload
+    
+    echo "✅ Service installed successfully!"
+    echo "Use 'echo-daemon enable' to auto-start on login"
+}
+
+uninstall_service() {
+    echo "Uninstalling Echo daemon service..."
+    
+    # Stop and disable service
+    systemctl --user stop echo-daemon 2>/dev/null
+    systemctl --user disable echo-daemon 2>/dev/null
+    
+    # Remove service file
+    rm -f "$USER_SERVICE_DIR/echo-daemon.service"
+    
+    # Reload systemd
+    systemctl --user daemon-reload
+    
+    echo "✅ Service uninstalled successfully!"
+}
+
+case "$1" in
+    start)
+        if systemctl --user is-active echo-daemon >/dev/null 2>&1; then
+            echo "Starting with systemd..."
+            systemctl --user start echo-daemon
+        else
+            echo "Starting directly..."
+            python3 "$DAEMON_SCRIPT" start
+        fi
+        ;;
+    stop)
+        if systemctl --user is-active echo-daemon >/dev/null 2>&1; then
+            echo "Stopping with systemd..."
+            systemctl --user stop echo-daemon
+        else
+            echo "Stopping directly..."
+            python3 "$DAEMON_SCRIPT" stop
+        fi
+        ;;
+    restart)
+        if systemctl --user is-active echo-daemon >/dev/null 2>&1; then
+            echo "Restarting with systemd..."
+            systemctl --user restart echo-daemon
+        else
+            echo "Restarting directly..."
+            python3 "$DAEMON_SCRIPT" restart
+        fi
+        ;;
+    status)
+        if systemctl --user is-active echo-daemon >/dev/null 2>&1; then
+            systemctl --user status echo-daemon
+        else
+            python3 "$DAEMON_SCRIPT" status
+        fi
+        ;;
+    logs)
+        if systemctl --user is-active echo-daemon >/dev/null 2>&1; then
+            journalctl --user -u echo-daemon -f
+        else
+            tail -f "$HOME/.local/share/echo/daemon.log"
+        fi
+        ;;
+    install)
+        install_service
+        ;;
+    uninstall)
+        uninstall_service
+        ;;
+    enable)
+        systemctl --user enable echo-daemon
+        echo "✅ Echo daemon will auto-start on login"
+        ;;
+    disable)
+        systemctl --user disable echo-daemon
+        echo "✅ Echo daemon auto-start disabled"
+        ;;
+    config)
+        CONFIG_FILE="$HOME/.config/echo/daemon.json"
+        mkdir -p "$(dirname "$CONFIG_FILE")"
+        
+        if [[ ! -f "$CONFIG_FILE" ]]; then
+            echo "Creating default configuration..."
+            python3 "$DAEMON_SCRIPT" status >/dev/null  # This creates the config
+        fi
+        
+        ${EDITOR:-nano} "$CONFIG_FILE"
+        echo "Configuration updated. Restart daemon to apply changes."
+        ;;
+    test)
+        echo "Testing Echo transcription..."
+        echo "This will record 5 seconds of audio and transcribe it."
+        read -p "Press Enter to start recording..."
+        
+        python3 -c "
+import sys
+sys.path.append('/home/nigel/echo/daemon')
+from echo_daemon import EchoDaemon
+daemon = EchoDaemon()
+daemon.record_and_transcribe()
+"
+        ;;
+    help|--help|-h)
+        show_help
+        ;;
+    *)
+        echo "Unknown command: $1"
+        echo "Use 'echo-daemon help' for usage information"
+        exit 1
+        ;;
+esac
