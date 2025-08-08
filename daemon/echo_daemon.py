@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Echo Speech-to-Text Daemon v1.0
-Proper daemon implementation with systemd integration
+Echo Speech-to-Text Daemon v2.0
+Press-and-hold walkie-talkie style with Super+E and Waybar feedback
 """
 
 import os
@@ -35,14 +35,33 @@ class EchoDaemon:
         self.config_file = config_file or Path.home() / ".config/echo/daemon.json"
         self.pid_file = Path("/tmp/echo_daemon.pid")
         self.log_file = Path.home() / ".local/share/echo/daemon.log"
+        
+        # Press-and-hold state
         self.recording = False
+        self.super_pressed = False
+        self.e_pressed = False
+        self.recording_start_time = None
+        self.recording_process = None
+        self.audio_file = None
+        
+        # Daemon state
         self.running = True
+        self.current_state = "idle"  # idle, recording, processing, success, error
+        
+        # Threading
+        self.waybar_thread = None
+        self.silence_monitor_thread = None
+        self.typing_monitor_thread = None
         
         # Setup logging
         self.setup_logging(log_level)
         
         # Load configuration
         self.config = self.load_config()
+        
+        # Initialize Waybar status
+        self.waybar_status_file = Path(self.config.get('waybar', {}).get('status_file', '/tmp/echo_waybar_status.json'))
+        self.update_waybar_status("idle", "🎤 Ready")
         
         # Setup signal handlers
         signal.signal(signal.SIGINT, self.signal_handler)
@@ -137,6 +156,182 @@ class EchoDaemon:
         """Reload configuration (SIGHUP handler)"""
         self.logger.info("Reloading configuration...")
         self.config = self.load_config()
+    
+    def update_waybar_status(self, state, text, elapsed_time=None):
+        """Update Waybar status with current daemon state"""
+        try:
+            status = {
+                "text": text,
+                "tooltip": f"Echo Daemon - {state.title()}",
+                "class": f"echo-{state}",
+                "state": state
+            }
+            
+            if elapsed_time is not None:
+                status["elapsed"] = elapsed_time
+                
+            with open(self.waybar_status_file, 'w') as f:
+                json.dump(status, f)
+                
+            self.current_state = state
+        except Exception as e:
+            self.logger.warning(f"Failed to update Waybar status: {e}")
+    
+    def start_recording(self):
+        """Start press-and-hold recording"""
+        if self.recording:
+            return
+            
+        self.recording = True
+        self.recording_start_time = time.time()
+        
+        # Create temporary audio file
+        self.audio_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+        self.audio_file.close()
+        
+        # Start recording process
+        cmd = [
+            "parecord",
+            "--format", self.config['record_format'],
+            "--rate", str(self.config['record_rate']),
+            "--channels", str(self.config['record_channels']),
+            self.audio_file.name
+        ]
+        
+        try:
+            self.recording_process = subprocess.Popen(cmd, 
+                                                    stdout=subprocess.PIPE, 
+                                                    stderr=subprocess.PIPE)
+            self.logger.info("Started press-and-hold recording")
+            self.update_waybar_status("recording", "🔴 0s")
+            
+            # Start monitoring threads
+            self.start_monitoring_threads()
+            
+        except Exception as e:
+            self.logger.error(f"Failed to start recording: {e}")
+            self.recording = False
+            self.update_waybar_status("error", "❌ Error")
+            
+    def stop_recording(self):
+        """Stop press-and-hold recording and process"""
+        if not self.recording:
+            return
+            
+        # Check minimum hold duration
+        if self.recording_start_time:
+            hold_duration = time.time() - self.recording_start_time
+            min_duration = self.config.get('press_and_hold', {}).get('min_hold_duration', 0.3)
+            
+            if hold_duration < min_duration:
+                self.logger.info(f"Recording too short ({hold_duration:.2f}s), ignoring")
+                self.cancel_recording()
+                return
+        
+        self.recording = False
+        
+        # Stop recording process
+        if self.recording_process:
+            try:
+                self.recording_process.terminate()
+                self.recording_process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.recording_process.kill()
+            except Exception as e:
+                self.logger.warning(f"Error stopping recording: {e}")
+        
+        # Stop monitoring threads
+        self.stop_monitoring_threads()
+        
+        # Process the recording
+        self.update_waybar_status("processing", "🧠 Processing")
+        threading.Thread(target=self.process_recording, daemon=True).start()
+    
+    def cancel_recording(self):
+        """Cancel recording without processing"""
+        if not self.recording:
+            return
+            
+        self.recording = False
+        
+        # Stop recording process
+        if self.recording_process:
+            try:
+                self.recording_process.terminate()
+                self.recording_process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.recording_process.kill()
+            except Exception as e:
+                self.logger.warning(f"Error canceling recording: {e}")
+        
+        # Stop monitoring threads
+        self.stop_monitoring_threads()
+        
+        # Clean up audio file
+        if self.audio_file and os.path.exists(self.audio_file.name):
+            os.unlink(self.audio_file.name)
+            
+        self.logger.info("Recording canceled")
+        self.update_waybar_status("idle", "🎤 Ready")
+    
+    def start_monitoring_threads(self):
+        """Start monitoring threads for recording"""
+        # Elapsed time updater thread
+        self.waybar_thread = threading.Thread(target=self.update_elapsed_time, daemon=True)
+        self.waybar_thread.start()
+        
+        # Silence monitor thread (if enabled)
+        if self.config.get('press_and_hold', {}).get('silence_auto_stop', 0) > 0:
+            self.silence_monitor_thread = threading.Thread(target=self.monitor_silence, daemon=True)
+            self.silence_monitor_thread.start()
+        
+        # Typing monitor thread (if enabled)
+        if self.config.get('press_and_hold', {}).get('cancel_on_typing', False):
+            self.typing_monitor_thread = threading.Thread(target=self.monitor_typing, daemon=True)
+            self.typing_monitor_thread.start()
+    
+    def stop_monitoring_threads(self):
+        """Stop all monitoring threads"""
+        # Threads will stop when self.recording becomes False
+        pass
+    
+    def update_elapsed_time(self):
+        """Update Waybar with elapsed recording time"""
+        while self.recording and self.recording_start_time:
+            elapsed = time.time() - self.recording_start_time
+            
+            # Check max duration
+            max_duration = self.config.get('press_and_hold', {}).get('max_hold_duration', 60)
+            if elapsed >= max_duration:
+                self.logger.info(f"Max recording duration ({max_duration}s) reached")
+                self.stop_recording()
+                break
+            
+            # Update Waybar with elapsed time
+            self.update_waybar_status("recording", f"🔴 {int(elapsed)}s")
+            
+            # Update interval
+            update_interval = self.config.get('waybar', {}).get('update_interval', 0.1)
+            time.sleep(update_interval)
+    
+    def monitor_silence(self):
+        """Monitor for silence and auto-stop recording"""
+        # This is a simplified implementation
+        # In a full implementation, you'd analyze the audio stream for silence
+        silence_duration = self.config.get('press_and_hold', {}).get('silence_auto_stop', 3.0)
+        
+        # For now, just a placeholder - would need audio level monitoring
+        while self.recording:
+            time.sleep(0.5)
+            # TODO: Implement actual silence detection
+    
+    def monitor_typing(self):
+        """Monitor for typing and cancel recording if detected"""
+        # This would monitor for other key presses during recording
+        # For now, just a placeholder
+        while self.recording:
+            time.sleep(0.1)
+            # TODO: Implement typing detection
 
     def signal_handler(self, signum, frame):
         """Handle shutdown signals"""
@@ -216,66 +411,29 @@ class EchoDaemon:
                 pass
             return False
 
-    def record_and_transcribe(self):
-        """Enhanced recording with better error handling"""
-        if self.recording:
-            self.logger.warning("Already recording, ignoring request")
+    def process_recording(self):
+        """Process the completed press-and-hold recording"""
+        if not self.audio_file or not os.path.exists(self.audio_file.name):
+            self.logger.error("No audio file to process")
+            self.update_waybar_status("error", "❌ No Audio")
             return
             
-        self.recording = True
-        temp_audio = f"/tmp/echo_recording_{os.getpid()}.wav"
+        temp_audio = self.audio_file.name
         
         try:
-            self.logger.info("Starting recording session")
+            self.logger.info("Processing press-and-hold recording")
             
-            # Notification
-            if self.config['notifications']:
-                subprocess.run([
-                    "notify-send", 
-                    "🎤 Echo Recording", 
-                    f"Speak now for {self.config['record_duration']} seconds!", 
-                    "-t", "4000",
-                    "-u", "normal"
-                ], capture_output=True)
-            
-            # Record audio
-            self.logger.info(f"Recording {self.config['record_duration']} seconds of audio...")
-            
-            record_cmd = [
-                "timeout", f"{self.config['record_duration']}s",
-                "parecord", 
-                f"--format={self.config['record_format']}", 
-                f"--rate={self.config['record_rate']}", 
-                f"--channels={self.config['record_channels']}", 
-                temp_audio
-            ]
-            
-            result = subprocess.run(record_cmd, capture_output=True, text=True)
-            
-            if result.returncode != 0:
-                self.logger.warning(f"parecord failed: {result.stderr}")
-                # Try arecord fallback
-                record_cmd = [
-                    "arecord",
-                    "-f", "S16_LE",
-                    f"-r", str(self.config['record_rate']), 
-                    "-c", str(self.config['record_channels']),
-                    "-d", str(self.config['record_duration']),
-                    temp_audio
-                ]
-                result = subprocess.run(record_cmd, capture_output=True)
-            
-            # Validate recording
+            # Validate recording file
             if not os.path.exists(temp_audio):
                 raise Exception("No audio file created")
                 
             file_size = os.path.getsize(temp_audio)
-            self.logger.info(f"Recorded {file_size} bytes")
+            self.logger.info(f"Processing {file_size} bytes of audio")
             
             if file_size < 1000:
                 raise Exception(f"Audio file too small ({file_size} bytes)")
             
-            # Transcription notification
+            # Processing notification
             if self.config['notifications']:
                 subprocess.run([
                     "notify-send", 
@@ -325,8 +483,11 @@ class EchoDaemon:
             if transcription and len(transcription.strip()) > 2:
                 self.logger.info(f"Transcription successful: '{transcription}'")
                 
-                # Copy to clipboard
-                if self.config['clipboard']:
+                # Update Waybar with success
+                self.update_waybar_status("success", "✅ Success")
+                
+                # Copy to clipboard and auto-paste
+                if self.config.get('clipboard', True):
                     self.copy_to_clipboard(transcription)
                 
                 # Success notification
@@ -338,8 +499,13 @@ class EchoDaemon:
                         "-t", "8000"
                     ])
                 
+                # Return to idle after brief success display
+                threading.Timer(2.0, lambda: self.update_waybar_status("idle", "🎤 Ready")).start()
+                
             else:
                 self.logger.warning("No speech detected or transcription failed")
+                self.update_waybar_status("error", "❌ No Speech")
+                
                 if self.config['notifications']:
                     subprocess.run([
                         "notify-send", 
@@ -347,9 +513,14 @@ class EchoDaemon:
                         "No speech detected\nTry speaking louder", 
                         "-t", "5000"
                     ])
+                
+                # Return to idle after brief error display
+                threading.Timer(3.0, lambda: self.update_waybar_status("idle", "🎤 Ready")).start()
             
         except Exception as e:
             self.logger.error(f"Recording/transcription error: {e}")
+            self.update_waybar_status("error", "❌ Error")
+            
             if self.config['notifications']:
                 subprocess.run([
                     "notify-send", 
@@ -357,9 +528,18 @@ class EchoDaemon:
                     f"Error: {str(e)[:50]}...", 
                     "-t", "5000"
                 ])
+            
+            # Return to idle after brief error display
+            threading.Timer(3.0, lambda: self.update_waybar_status("idle", "🎤 Ready")).start()
+            
         finally:
             self.logger.info("Recording session complete")
-            self.recording = False
+            # Clean up audio file
+            if self.audio_file and os.path.exists(self.audio_file.name):
+                try:
+                    os.unlink(self.audio_file.name)
+                except Exception as e:
+                    self.logger.warning(f"Failed to clean up audio file: {e}")
 
     def extract_transcription(self, output):
         """Extract clean transcription from whisper output"""
@@ -375,7 +555,7 @@ class EchoDaemon:
         return ""
 
     def copy_to_clipboard(self, text):
-        """Copy text to clipboard with fallback methods"""
+        """Copy text to clipboard and auto-paste"""
         try:
             subprocess.run(["wl-copy"], input=text, text=True, check=True)
             self.logger.info("Copied to clipboard (Wayland)")
@@ -386,6 +566,25 @@ class EchoDaemon:
                 self.logger.info("Copied to clipboard (X11)")
             except:
                 self.logger.warning("Clipboard copy failed")
+                return
+        
+        # Auto-paste after a short delay
+        try:
+            import time
+            time.sleep(0.1)  # Small delay to ensure clipboard is ready
+            
+            # Use wtype for Wayland or xdotool for X11 to simulate Ctrl+V
+            try:
+                subprocess.run(["wtype", "-M", "ctrl", "v"], check=True)
+                self.logger.info("Auto-pasted text (Wayland)")
+            except:
+                try:
+                    subprocess.run(["xdotool", "key", "ctrl+v"], check=True)
+                    self.logger.info("Auto-pasted text (X11)")
+                except:
+                    self.logger.warning("Auto-paste failed - text is in clipboard for manual paste")
+        except Exception as e:
+            self.logger.warning(f"Auto-paste error: {e}")
 
     def start_keyboard_listener(self):
         """Start keyboard listener based on available library"""
@@ -398,72 +597,58 @@ class EchoDaemon:
             return False
 
     def start_pynput_listener(self):
-        """Start pynput-based listener"""
+        """Start press-and-hold pynput listener for Right Ctrl"""
         def on_press(key):
             try:
-                if key == Key.f12 and self.config['hotkeys']['f12']:
-                    self.logger.info("F12 hotkey activated")
-                    threading.Thread(target=self.record_and_transcribe, daemon=True).start()
+                # Check for Right Ctrl key press
+                if key == Key.ctrl_r:
+                    if not self.right_ctrl_pressed and self.config['hotkeys'].get('right_ctrl', False):
+                        self.right_ctrl_pressed = True
+                        self.logger.info("Right Ctrl pressed - starting recording")
+                        self.start_recording()
+                # ESC to stop daemon
+                elif key == Key.esc:
+                    self.logger.info("ESC pressed - stopping daemon")
+                    self.running = False
+                    return False
             except AttributeError:
                 pass
         
         def on_release(key):
-            if key == Key.esc:
-                self.logger.info("ESC pressed - stopping daemon")
-                self.running = False
-                return False
+            try:
+                # Check for Right Ctrl key release
+                if key == Key.ctrl_r:
+                    if self.right_ctrl_pressed:
+                        self.right_ctrl_pressed = False
+                        self.logger.info("Right Ctrl released - stopping recording")
+                        self.stop_recording()
+            except AttributeError:
+                pass
         
-        self.logger.info("Starting pynput keyboard listener...")
-        try:
-            with Listener(on_press=on_press, on_release=on_release) as listener:
-                listener.join()
-        except Exception as e:
-            self.logger.error(f"pynput listener failed: {e}")
-            return False
-        return True
-
-    def start_keyboard_library_listener(self):
-        """Start keyboard library listener"""
-        import keyboard as kb
+        # Initialize state
+        self.right_ctrl_pressed = False
         
-        self.logger.info("Starting keyboard library listener...")
+        self.logger.info("Starting press-and-hold pynput listener for Right Ctrl...")
         try:
-            # Register hotkeys based on configuration
-            for hotkey_name, enabled in self.config['hotkeys'].items():
-                if enabled:
-                    if hotkey_name == 'ctrl':
-                        # Map 'ctrl' to 'ctrl+space' for better usability
-                        kb.add_hotkey('ctrl+space', lambda: threading.Thread(target=self.record_and_transcribe, daemon=True).start())
-                        self.logger.info(f"Registered hotkey: ctrl+space")
-                    else:
-                        kb.add_hotkey(hotkey_name, lambda: threading.Thread(target=self.record_and_transcribe, daemon=True).start())
-                        self.logger.info(f"Registered hotkey: {hotkey_name}")
+            # Start listener in a separate thread so it doesn't block
+            def run_listener():
+                with Listener(on_press=on_press, on_release=on_release) as listener:
+                    while self.running:
+                        time.sleep(0.1)
+                    listener.stop()
             
-            self.logger.info("Hotkeys registered successfully")
-            kb.wait('esc')
+            listener_thread = threading.Thread(target=run_listener, daemon=True)
+            listener_thread.start()
             return True
             
         except Exception as e:
-            self.logger.error(f"keyboard library failed: {e}")
+            self.logger.error(f"pynput listener failed: {e}")
             return False
 
-    def start_polling_mode(self):
-        """Fallback: Check for trigger file"""
-        trigger_file = self.config['trigger_file']
-        self.logger.info(f"Starting polling mode: watching {trigger_file}")
-        
-        while self.running:
-            if os.path.exists(trigger_file):
-                self.logger.info("Trigger file detected")
-                try:
-                    os.unlink(trigger_file)
-                except:
-                    pass
-                threading.Thread(target=self.record_and_transcribe, daemon=True).start()
-            time.sleep(0.5)
+
 
     def start(self, daemon_mode=False):
-        """Start the daemon"""
+        """Start the daemon with press-and-hold Super+E"""
         if self.is_running():
             self.logger.error("Daemon is already running")
             return False
@@ -471,16 +656,24 @@ class EchoDaemon:
         if daemon_mode:
             self.daemonize()
         
-        self.logger.info("Starting Echo daemon...")
+        self.logger.info("Starting Echo daemon with press-and-hold Super+E...")
         
-        # Try keyboard listeners first
-        if self.start_keyboard_listener():
+        # Initialize Waybar status to idle
+        self.update_waybar_status("idle", "🎤 Ready")
+        
+        # Start press-and-hold Super+E listener
+        if self.start_pynput_listener():
+            self.logger.info("Press-and-hold Super+E listener started successfully")
+            # Keep daemon running
+            try:
+                while self.running:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                self.logger.info("Daemon interrupted by user")
             return True
-        
-        # Fallback to polling mode
-        self.logger.warning("Keyboard listeners failed, using polling mode")
-        self.start_polling_mode()
-        return True
+        else:
+            self.logger.error("Failed to start press-and-hold listener")
+            return False
 
     def stop(self):
         """Stop the daemon"""
