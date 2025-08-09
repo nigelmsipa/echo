@@ -180,8 +180,12 @@ class EchoDaemon:
     def start_recording(self):
         """Start press-and-hold recording"""
         if self.recording:
+            self.logger.warning("Already recording, ignoring start request")
             return
             
+        # Reset state before starting new recording
+        self.reset_recording_state()
+        
         self.recording = True
         self.recording_start_time = time.time()
         
@@ -212,10 +216,12 @@ class EchoDaemon:
             self.logger.error(f"Failed to start recording: {e}")
             self.recording = False
             self.update_waybar_status("error", "❌ Error")
-            
+            self.reset_recording_state()
+
     def stop_recording(self):
         """Stop press-and-hold recording and process"""
         if not self.recording:
+            self.logger.warning("Not recording, ignoring stop request")
             return
             
         # Check minimum hold duration
@@ -243,7 +249,7 @@ class EchoDaemon:
         # Stop monitoring threads
         self.stop_monitoring_threads()
         
-        # Process the recording
+        # Process the recording in a separate thread to keep keyboard listener responsive
         self.update_waybar_status("processing", "🧠 Processing")
         threading.Thread(target=self.process_recording, daemon=True).start()
     
@@ -416,6 +422,7 @@ class EchoDaemon:
         if not self.audio_file or not os.path.exists(self.audio_file.name):
             self.logger.error("No audio file to process")
             self.update_waybar_status("error", "❌ No Audio")
+            self.reset_recording_state()  # Reset state on error
             return
             
         temp_audio = self.audio_file.name
@@ -474,7 +481,7 @@ class EchoDaemon:
             # Extract transcription
             transcription = self.extract_transcription(result.stdout)
             
-            # Cleanup temp file
+            # Cleanup temp file immediately
             try:
                 os.unlink(temp_audio)
             except:
@@ -534,12 +541,8 @@ class EchoDaemon:
             
         finally:
             self.logger.info("Recording session complete")
-            # Clean up audio file
-            if self.audio_file and os.path.exists(self.audio_file.name):
-                try:
-                    os.unlink(self.audio_file.name)
-                except Exception as e:
-                    self.logger.warning(f"Failed to clean up audio file: {e}")
+            # Reset all recording state
+            self.reset_recording_state()
 
     def extract_transcription(self, output):
         """Extract clean transcription from whisper output"""
@@ -568,10 +571,10 @@ class EchoDaemon:
                 self.logger.warning("Clipboard copy failed")
                 return
         
-        # Auto-paste after a short delay
+        # Auto-paste after a longer delay to ensure clipboard is ready
         try:
             import time
-            time.sleep(0.1)  # Small delay to ensure clipboard is ready
+            time.sleep(0.5)  # Increased delay to ensure clipboard is ready
             
             # Use wtype for Wayland or xdotool for X11 to simulate Ctrl+V
             try:
@@ -585,6 +588,29 @@ class EchoDaemon:
                     self.logger.warning("Auto-paste failed - text is in clipboard for manual paste")
         except Exception as e:
             self.logger.warning(f"Auto-paste error: {e}")
+
+    def reset_recording_state(self):
+        """Reset all recording state variables to prepare for next recording"""
+        try:
+            # Clean up audio file
+            if self.audio_file and os.path.exists(self.audio_file.name):
+                try:
+                    os.unlink(self.audio_file.name)
+                except Exception as e:
+                    self.logger.warning(f"Failed to clean up audio file: {e}")
+            
+            # Reset state variables
+            self.audio_file = None
+            self.recording_process = None
+            self.recording_start_time = None
+            
+            # Ensure recording flag is false
+            self.recording = False
+            
+            self.logger.debug("Recording state reset successfully")
+            
+        except Exception as e:
+            self.logger.warning(f"Error resetting recording state: {e}")
 
     def start_keyboard_listener(self):
         """Start keyboard listener based on available library"""
@@ -644,8 +670,6 @@ class EchoDaemon:
         except Exception as e:
             self.logger.error(f"pynput listener failed: {e}")
             return False
-
-
 
     def start(self, daemon_mode=False):
         """Start the daemon with press-and-hold Super+E"""
