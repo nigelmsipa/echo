@@ -49,6 +49,7 @@ echo trigger > /tmp/echo_trigger  # Activate via file
 ```
 
 ## ✨ Features
+- **🚀 Automatic startup** - Starts automatically on login
 
 - **🚀 Ultra-fast** - Optimized whisper.cpp transcription
 - **🔒 100% local** - No internet required, privacy-focused
