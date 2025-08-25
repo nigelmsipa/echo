@@ -14,7 +14,7 @@ from evdev import InputDevice, categorize, ecodes
 
 class EchoDaemon:
     def __init__(self):
-        self.device_path = "/dev/input/event2"  # MX Keys Mini Keyboard
+        self.device_path = "/dev/input/event31"  # MX Keys Mini Keyboard
         self.recording = False
         self.temp_file = None
         self.record_process = None
