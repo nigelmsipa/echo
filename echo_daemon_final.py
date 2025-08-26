@@ -9,12 +9,13 @@ import time
 import subprocess
 import tempfile
 import os
+import glob
 from pathlib import Path
 from evdev import InputDevice, categorize, ecodes
 
 class EchoDaemon:
     def __init__(self):
-        self.device_path = "/dev/input/event31"  # MX Keys Mini Keyboard
+        self.device_path = None
         self.recording = False
         self.temp_file = None
         self.record_process = None
@@ -25,6 +26,12 @@ class EchoDaemon:
         
         # Check dependencies
         self._check_dependencies()
+        
+        # Auto-detect keyboard device
+        self.device_path = self._find_keyboard_device()
+        if not self.device_path:
+            print("❌ No suitable keyboard device found!")
+            sys.exit(1)
         
         # Load Whisper model
         print("🧠 Loading Whisper model...")
@@ -73,6 +80,54 @@ class EchoDaemon:
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except:
             pass  # Notifications are nice-to-have, not critical
+    
+    def _find_keyboard_device(self):
+        """Auto-detect the keyboard device that supports RIGHT CTRL"""
+        print("🔍 Auto-detecting keyboard device...")
+        
+        # Priority order: prefer MX Keys Mini, then any keyboard with RIGHT CTRL
+        device_paths = sorted(glob.glob('/dev/input/event*'))
+        
+        keyboard_devices = []
+        
+        for device_path in device_paths:
+            try:
+                device = InputDevice(device_path)
+                
+                # Check if device supports keyboard events
+                if ecodes.EV_KEY not in device.capabilities():
+                    continue
+                    
+                # Check if device supports RIGHT CTRL key
+                if ecodes.KEY_RIGHTCTRL not in device.capabilities().get(ecodes.EV_KEY, []):
+                    continue
+                
+                # This device can handle RIGHT CTRL
+                device_info = {
+                    'path': device_path,
+                    'name': device.name,
+                    'is_mx_keys': 'MX Keys' in device.name
+                }
+                keyboard_devices.append(device_info)
+                print(f"   📱 Found: {device_path} - {device.name}")
+                
+            except (PermissionError, OSError):
+                continue
+        
+        if not keyboard_devices:
+            print("❌ No keyboard devices with RIGHT CTRL support found")
+            return None
+        
+        # Prefer MX Keys Mini if available, otherwise use first keyboard found
+        for device in keyboard_devices:
+            if device['is_mx_keys']:
+                print(f"✅ Selected MX Keys: {device['path']} - {device['name']}")
+                return device['path']
+        
+        # Fallback to first available keyboard
+        selected = keyboard_devices[0]
+        print(f"✅ Selected keyboard: {selected['path']} - {selected['name']}")
+        return selected['path']
     
     def start_recording(self):
         """Start audio recording with clear feedback"""
