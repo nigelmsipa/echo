@@ -19,9 +19,10 @@ class EchoDaemon:
         self.record_process = None
         self.temp_path = None
         
-        # Initialize Whisper model (same as GUI)
+        # Initialize Whisper model with optimized CPU settings
         print("Loading Whisper model...")
-        self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
+        os.environ["OMP_NUM_THREADS"] = "4"  # Optimal thread count for performance
+        self.model = WhisperModel(model_size, device="cpu", compute_type="int8", cpu_threads=4)
         
         print(f"Echo daemon initialized with {model_size} model")
     
