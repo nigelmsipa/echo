@@ -117,6 +117,7 @@ def main():
     
     echo = HyprlandEcho(model_size=args.model)
     
+    
     if args.action == 'start':
         result = echo.start_recording()
     elif args.action == 'stop':
