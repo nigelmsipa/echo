@@ -84,49 +84,58 @@ class EchoDaemon:
     def _find_keyboard_device(self):
         """Auto-detect the keyboard device that supports RIGHT CTRL"""
         print("🔍 Auto-detecting keyboard device...")
-        
-        # Priority order: prefer MX Keys Mini, then any keyboard with RIGHT CTRL
+
+        # Priority order: prefer real keyboards over virtual ones
         device_paths = sorted(glob.glob('/dev/input/event*'))
-        
+
         keyboard_devices = []
-        
+
         for device_path in device_paths:
             try:
                 device = InputDevice(device_path)
-                
+
                 # Check if device supports keyboard events
                 if ecodes.EV_KEY not in device.capabilities():
                     continue
-                    
+
                 # Check if device supports RIGHT CTRL key
                 if ecodes.KEY_RIGHTCTRL not in device.capabilities().get(ecodes.EV_KEY, []):
                     continue
-                
+
+                # Detect virtual keyboards to deprioritize them
+                name_lower = device.name.lower()
+                is_virtual = any(virt in name_lower for virt in
+                               ['virtual', 'keyd', 'ydotool', 'uinput'])
+
+                # Prefer MX Keys or wireless keyboards
+                is_preferred = any(pref in device.name for pref in
+                                 ['MX Keys', 'Wireless Keyboard', 'Bluetooth'])
+
                 # This device can handle RIGHT CTRL
                 device_info = {
                     'path': device_path,
                     'name': device.name,
-                    'is_mx_keys': 'MX Keys' in device.name
+                    'is_virtual': is_virtual,
+                    'is_preferred': is_preferred,
+                    'priority': 2 if is_preferred else (0 if is_virtual else 1)
                 }
                 keyboard_devices.append(device_info)
                 print(f"   📱 Found: {device_path} - {device.name}")
-                
+
             except (PermissionError, OSError):
                 continue
-        
+
         if not keyboard_devices:
             print("❌ No keyboard devices with RIGHT CTRL support found")
             return None
-        
-        # Prefer MX Keys Mini if available, otherwise use first keyboard found
-        for device in keyboard_devices:
-            if device['is_mx_keys']:
-                print(f"✅ Selected MX Keys: {device['path']} - {device['name']}")
-                return device['path']
-        
-        # Fallback to first available keyboard
+
+        # Sort by priority (higher is better): preferred > real > virtual
+        keyboard_devices.sort(key=lambda d: d['priority'], reverse=True)
+
         selected = keyboard_devices[0]
         print(f"✅ Selected keyboard: {selected['path']} - {selected['name']}")
+        if selected['is_virtual']:
+            print(f"⚠️  Warning: Selected device is virtual, physical keyboard may not work")
         return selected['path']
     
     def start_recording(self):
