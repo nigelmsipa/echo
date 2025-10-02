@@ -10,27 +10,29 @@ import subprocess
 import tempfile
 import os
 import glob
+import select
 from pathlib import Path
 from evdev import InputDevice, categorize, ecodes
 
 class EchoDaemon:
     def __init__(self):
-        self.device_path = None
+        self.device_paths = []
+        self.devices = []
         self.recording = False
         self.temp_file = None
         self.record_process = None
-        
+
         # Initialize
         print("🚀 Echo Speech-to-Text Daemon Starting...")
         print("📍 Part of NigelOS ecosystem (Arch Linux + Hyprland)")
-        
+
         # Check dependencies
         self._check_dependencies()
-        
-        # Auto-detect keyboard device
-        self.device_path = self._find_keyboard_device()
-        if not self.device_path:
-            print("❌ No suitable keyboard device found!")
+
+        # Auto-detect all keyboard devices
+        self.device_paths = self._find_keyboard_devices()
+        if not self.device_paths:
+            print("❌ No suitable keyboard devices found!")
             sys.exit(1)
         
         # Load Whisper model
@@ -81,13 +83,11 @@ class EchoDaemon:
         except:
             pass  # Notifications are nice-to-have, not critical
     
-    def _find_keyboard_device(self):
-        """Auto-detect the keyboard device that supports RIGHT CTRL"""
-        print("🔍 Auto-detecting keyboard device...")
+    def _find_keyboard_devices(self):
+        """Auto-detect all keyboard devices that support RIGHT CTRL"""
+        print("🔍 Auto-detecting keyboard devices...")
 
-        # Priority order: prefer real keyboards over virtual ones
         device_paths = sorted(glob.glob('/dev/input/event*'))
-
         keyboard_devices = []
 
         for device_path in device_paths:
@@ -102,41 +102,29 @@ class EchoDaemon:
                 if ecodes.KEY_RIGHTCTRL not in device.capabilities().get(ecodes.EV_KEY, []):
                     continue
 
-                # Detect virtual keyboards to deprioritize them
+                # Detect virtual keyboards to skip them entirely
                 name_lower = device.name.lower()
                 is_virtual = any(virt in name_lower for virt in
                                ['virtual', 'keyd', 'ydotool', 'uinput'])
 
-                # Prefer MX Keys or wireless keyboards
-                is_preferred = any(pref in device.name for pref in
-                                 ['MX Keys', 'Wireless Keyboard', 'Bluetooth'])
+                # Skip virtual keyboards - we only want real hardware
+                if is_virtual:
+                    print(f"   ⏭️  Skipping virtual: {device_path} - {device.name}")
+                    continue
 
-                # This device can handle RIGHT CTRL
-                device_info = {
-                    'path': device_path,
-                    'name': device.name,
-                    'is_virtual': is_virtual,
-                    'is_preferred': is_preferred,
-                    'priority': 2 if is_preferred else (0 if is_virtual else 1)
-                }
-                keyboard_devices.append(device_info)
-                print(f"   📱 Found: {device_path} - {device.name}")
+                # This is a real keyboard that supports RIGHT CTRL
+                keyboard_devices.append(device_path)
+                print(f"   ✅ Found keyboard: {device_path} - {device.name}")
 
             except (PermissionError, OSError):
                 continue
 
         if not keyboard_devices:
             print("❌ No keyboard devices with RIGHT CTRL support found")
-            return None
+            return []
 
-        # Sort by priority (higher is better): preferred > real > virtual
-        keyboard_devices.sort(key=lambda d: d['priority'], reverse=True)
-
-        selected = keyboard_devices[0]
-        print(f"✅ Selected keyboard: {selected['path']} - {selected['name']}")
-        if selected['is_virtual']:
-            print(f"⚠️  Warning: Selected device is virtual, physical keyboard may not work")
-        return selected['path']
+        print(f"🎯 Will listen to {len(keyboard_devices)} keyboard(s)")
+        return keyboard_devices
     
     def start_recording(self):
         """Start audio recording with clear feedback"""
@@ -247,37 +235,64 @@ class EchoDaemon:
             self.temp_file = None
     
     def listen_for_hotkey(self):
-        """Main loop - listen for RIGHT CTRL key presses"""
+        """Main loop - listen for RIGHT CTRL on all keyboards"""
         try:
-            device = InputDevice(self.device_path)
-            print(f"🎯 Connected to: {device.name}")
-            
-            for event in device.read_loop():
-                if event.type == ecodes.EV_KEY:
-                    key_event = categorize(event)
-                    
-                    if key_event.keycode == 'KEY_RIGHTCTRL':
-                        if key_event.keystate == 1:  # Key pressed
-                            self.start_recording()
-                        elif key_event.keystate == 0:  # Key released
-                            self.stop_recording()
-                            
-        except PermissionError:
-            print(f"❌ Permission denied accessing {self.device_path}")
+            # Open all keyboard devices
+            self.devices = []
+            for device_path in self.device_paths:
+                try:
+                    device = InputDevice(device_path)
+                    self.devices.append(device)
+                    print(f"🎯 Listening to: {device.name}")
+                except Exception as e:
+                    print(f"⚠️  Could not open {device_path}: {e}")
+
+            if not self.devices:
+                print("❌ Could not open any keyboard devices")
+                sys.exit(1)
+
+            # Create a mapping of file descriptors to devices
+            fd_to_device = {dev.fd: dev for dev in self.devices}
+
+            print(f"✅ Monitoring {len(self.devices)} keyboard(s) for RIGHT CTRL")
+
+            # Main event loop - select() allows monitoring multiple devices
+            while True:
+                # Wait for events from any device
+                r, w, x = select.select(fd_to_device.keys(), [], [])
+
+                for fd in r:
+                    device = fd_to_device[fd]
+
+                    # Read events from this device
+                    for event in device.read():
+                        if event.type == ecodes.EV_KEY:
+                            key_event = categorize(event)
+
+                            if key_event.keycode == 'KEY_RIGHTCTRL':
+                                if key_event.keystate == 1:  # Key pressed
+                                    self.start_recording()
+                                elif key_event.keystate == 0:  # Key released
+                                    self.stop_recording()
+
+        except PermissionError as e:
+            print(f"❌ Permission denied: {e}")
             print("💡 Fix: sudo usermod -a -G input $USER && reboot")
             sys.exit(1)
-            
-        except FileNotFoundError:
-            print(f"❌ Device {self.device_path} not found")
+
+        except FileNotFoundError as e:
+            print(f"❌ Device not found: {e}")
             print("💡 Check available devices: ls /dev/input/event*")
             sys.exit(1)
-            
+
         except KeyboardInterrupt:
             print("\n👋 Echo daemon stopped by user")
             self._cleanup()
-            
+
         except Exception as e:
             print(f"❌ Unexpected error: {e}")
+            import traceback
+            traceback.print_exc()
             self._cleanup()
             sys.exit(1)
 
