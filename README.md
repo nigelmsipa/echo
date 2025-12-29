@@ -9,8 +9,9 @@ Echo transforms your voice into text with a simple hotkey press. Hold Right Ctrl
 ## Features
 
 - **Hotkey activation**: Right Ctrl to start/stop recording
-- **Fast transcription**: Optimized CPU performance with 4-thread processing
-- **Offline processing**: Uses local OpenAI Whisper models, no internet required
+- **Dual mode transcription**: Local (offline) or OpenAI API (higher accuracy)
+- **Fast local processing**: Optimized CPU performance with 4-thread processing
+- **Superior API accuracy**: Optional OpenAI Whisper API for better transcription
 - **Desktop integration**: Works with any Linux application
 - **Multiple interfaces**: CLI daemon, GUI, and unified launcher
 - **Visual feedback**: System notifications and status indicators
@@ -42,13 +43,53 @@ python echo_launcher.py
 
 ## Configuration
 
-### Models Available
+Echo supports two transcription modes configured via `config.json`:
+
+### Mode 1: Local (Default)
+Uses faster-whisper with local models for **zero internet, instant feedback**.
+
+**Models Available:**
 - `tiny`: Fastest, basic accuracy (0.4s transcription)
-- `base`: Good balance - **recommended** (1.1s transcription) 
+- `base`: Good balance - **default** (1.1s transcription)
 - `small`: Better accuracy, slower (3.2s transcription)
 - `medium/large`: Best accuracy, much slower
 
-### Performance Tuning
+**Setup:**
+```json
+{
+  "mode": "local",
+  "local_model": "base"
+}
+```
+
+### Mode 2: OpenAI API
+Uses OpenAI's Whisper API for **superior accuracy** (recommended for important transcriptions).
+
+**Setup:**
+1. Get your API key from [OpenAI](https://platform.openai.com/api-keys)
+2. Edit `config.json`:
+```json
+{
+  "mode": "api",
+  "openai_api_key": "sk-...",
+  "api_model": "whisper-1"
+}
+```
+3. Install the OpenAI package (included in requirements):
+```bash
+pip install openai>=1.0.0
+```
+
+**Benefits:**
+- Higher accuracy than local models
+- No GPU required (uses OpenAI's servers)
+- Works offline from your machine's perspective
+
+**Costs:**
+- ~$0.02 per minute of audio (check OpenAI pricing)
+- Make sure billing is enabled on your account
+
+### Performance Tuning (Local Mode)
 Echo automatically uses 4 CPU threads for optimal performance. Transcription times:
 - **11 seconds of audio** → **1.1 seconds** processing time
 - Model loads in 0.37 seconds
@@ -81,10 +122,12 @@ echo/
 
 ## Why Echo?
 
-- **Privacy**: Everything runs locally, no cloud services
-- **Speed**: Optimized for real-time usage
+- **Flexible**: Choose between privacy (local) or accuracy (API)
+- **Privacy**: Local mode runs everything offline, no cloud services
+- **Accuracy**: API mode offers superior transcription quality
+- **Speed**: Optimized for real-time usage with instant feedback
 - **Simplicity**: One hotkey, immediate results
-- **Free**: Built on open-source Whisper models
+- **Cost-effective**: Local mode is completely free
 
 ## License
 

@@ -88,7 +88,7 @@ class EchoLauncher:
     def check_daemon_status(self):
         """Check if daemon is already running"""
         try:
-            result = subprocess.run(['pgrep', '-f', 'echo_daemon_final.py'], 
+            result = subprocess.run(['pgrep', '-f', 'echo_api.py'], 
                                   capture_output=True, text=True)
             if result.returncode == 0:
                 self.daemon_running = True
@@ -106,7 +106,7 @@ class EchoLauncher:
     def start_daemon(self):
         """Start the Echo daemon"""
         try:
-            daemon_path = Path(__file__).parent / "echo_daemon_final.py"
+            daemon_path = Path(__file__).parent / "echo_api.py"
             if not daemon_path.exists():
                 messagebox.showerror("Error", f"Daemon not found at {daemon_path}")
                 return
@@ -164,7 +164,7 @@ class EchoLauncher:
         """Stop the Echo daemon"""
         try:
             # Kill any running daemon processes
-            subprocess.run(['pkill', '-f', 'echo_daemon_final.py'], 
+            subprocess.run(['pkill', '-f', 'echo_api.py'], 
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
             if self.daemon_process:

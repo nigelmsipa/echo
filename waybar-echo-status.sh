@@ -1,8 +1,0 @@
-#!/bin/bash
-# Waybar Echo Status - JSON output for waybar widget
-
-if systemctl --user is-active --quiet echo-daemon.service; then
-    echo '{"text": "e", "class": "active", "tooltip": "Echo is listening (Right Ctrl)"}'
-else
-    echo '{"text": "e", "class": "inactive", "tooltip": "Echo is off"}'
-fi
