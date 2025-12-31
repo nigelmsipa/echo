@@ -89,10 +89,17 @@ class EchoAPI:
             print("Install: sudo pacman -S alsa-utils wtype libnotify")
             sys.exit(1)
 
-    def _notify(self, title, message):
-        """Desktop notification"""
-        subprocess.run(['notify-send', title, message],
-                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    def _notify(self, title, message, urgency="normal", icon="audio-input-microphone"):
+        """Desktop notification with replaceable tag"""
+        subprocess.run([
+            'notify-send',
+            '--app-name=Echo',
+            f'--urgency={urgency}',
+            f'--icon={icon}',
+            '--hint=string:x-dunst-stack-tag:echo',
+            '--hint=string:x-canonical-private-synchronous:echo',
+            title, message
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def _find_keyboard_devices(self):
         """Find real keyboard devices with RIGHT CTRL"""
@@ -130,7 +137,7 @@ class EchoAPI:
 
         self.recording = True
         print("Recording...")
-        self._notify("Echo", "Recording...")
+        self._notify("Echo Recording", "Speak now...", urgency="critical", icon="media-record")
 
         # Create temp WAV file
         temp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
@@ -149,6 +156,7 @@ class EchoAPI:
 
         self.recording = False
         print("Processing...")
+        self._notify("Echo", "Processing...", icon="system-run")
 
         # Stop recording
         if self.record_process:
@@ -160,7 +168,7 @@ class EchoAPI:
         # Check file exists and has content
         if not os.path.exists(self.temp_file) or os.path.getsize(self.temp_file) < 1024:
             print("No audio detected")
-            self._notify("Echo", "No audio detected")
+            self._notify("Echo", "No audio detected", icon="dialog-warning")
             self._cleanup()
             return
 
@@ -177,9 +185,12 @@ class EchoAPI:
             if text:
                 print(f"Transcribed: {text}")
                 self._type_text(text)
+                # Show brief preview of what was transcribed
+                preview = text[:50] + "..." if len(text) > 50 else text
+                self._notify("Echo Done", preview, icon="dialog-ok")
             else:
                 print("No speech detected")
-                self._notify("Echo", "No speech detected")
+                self._notify("Echo", "No speech detected", icon="dialog-warning")
 
         except Exception as e:
             print(f"API error: {e}")

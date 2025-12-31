@@ -1,0 +1,88 @@
+#!/bin/bash
+# Echo Toggle - Rofi-compatible launcher for Echo speech-to-text daemon
+# Usage: echo-toggle [start|stop|toggle|status]
+
+DAEMON_SCRIPT="$HOME/echo/echo_api.py"
+PIDFILE="/tmp/echo-daemon.pid"
+
+is_running() {
+    pgrep -f "python.*echo_api.py" > /dev/null 2>&1
+}
+
+get_pid() {
+    pgrep -f "python.*echo_api.py" 2>/dev/null | head -1
+}
+
+start_daemon() {
+    if is_running; then
+        notify-send -i audio-input-microphone "Echo" "Already running"
+        return 0
+    fi
+
+    # Use venv python if it exists
+    if [ -f "$HOME/echo/venv/bin/python" ]; then
+        PYTHON="$HOME/echo/venv/bin/python"
+    else
+        PYTHON="python3"
+    fi
+
+    # Start daemon in background
+    nohup "$PYTHON" "$DAEMON_SCRIPT" > /tmp/echo-daemon.log 2>&1 &
+    echo $! > "$PIDFILE"
+
+    sleep 0.5
+
+    if is_running; then
+        notify-send -i audio-input-microphone "Echo Started" "Hold RIGHT CTRL to record"
+    else
+        notify-send -u critical -i dialog-error "Echo" "Failed to start daemon"
+        return 1
+    fi
+}
+
+stop_daemon() {
+    if ! is_running; then
+        notify-send -i audio-input-microphone "Echo" "Not running"
+        return 0
+    fi
+
+    pkill -f "python.*echo_api.py"
+    rm -f "$PIDFILE"
+    notify-send -i audio-input-microphone "Echo Stopped" "Daemon stopped"
+}
+
+toggle_daemon() {
+    if is_running; then
+        stop_daemon
+    else
+        start_daemon
+    fi
+}
+
+show_status() {
+    if is_running; then
+        pid=$(get_pid)
+        notify-send -i audio-input-microphone "Echo Status" "Running (PID: $pid)"
+    else
+        notify-send -i audio-input-microphone "Echo Status" "Not running"
+    fi
+}
+
+case "${1:-toggle}" in
+    start)
+        start_daemon
+        ;;
+    stop)
+        stop_daemon
+        ;;
+    toggle)
+        toggle_daemon
+        ;;
+    status)
+        show_status
+        ;;
+    *)
+        echo "Usage: echo-toggle [start|stop|toggle|status]"
+        exit 1
+        ;;
+esac
