@@ -331,34 +331,27 @@ fn transcribe(api_key: &str) -> Result<String, String> {
     Ok(json["text"].as_str().unwrap_or("").trim().to_string())
 }
 
-/// Type text at cursor using wtype (direct typing, no clipboard dance)
+/// Type text at cursor using dotool (uinput, bypasses Wayland protocol)
 fn type_text(text: &str) {
-    // Small delay to let focus settle
-    std::thread::sleep(std::time::Duration::from_millis(150));
+    use std::io::Write;
 
-    let status = Command::new("wtype")
-        .args(["--", text])
+    let child = Command::new("dotool")
+        .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status();
+        .spawn();
 
-    match status {
-        Ok(s) if s.success() => {
+    match child {
+        Ok(mut c) => {
+            if let Some(mut stdin) = c.stdin.take() {
+                let _ = writeln!(stdin, "type {}", text);
+            }
+            let _ = c.wait();
             println!("Text typed");
         }
-        _ => {
-            eprintln!("wtype failed, falling back to clipboard");
-            let _ = Command::new("wl-copy")
-                .args(["--", text])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-            println!("Copied to clipboard (paste manually)");
-            notify(
-                "Echo",
-                "Text copied to clipboard - paste manually",
-                "dialog-information",
-            );
+        Err(e) => {
+            eprintln!("dotool failed: {}", e);
+            notify("Echo Error", "dotool failed to type text", "dialog-error");
         }
     }
 }
