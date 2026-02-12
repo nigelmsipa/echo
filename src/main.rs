@@ -331,7 +331,7 @@ fn transcribe(api_key: &str) -> Result<String, String> {
     Ok(json["text"].as_str().unwrap_or("").trim().to_string())
 }
 
-/// Type text at cursor using dotool (uinput, bypasses Wayland protocol)
+/// Type text at cursor using dotool with boosted speed
 fn type_text(text: &str) {
     use std::io::Write;
 
@@ -344,6 +344,8 @@ fn type_text(text: &str) {
     match child {
         Ok(mut c) => {
             if let Some(mut stdin) = c.stdin.take() {
+                let _ = writeln!(stdin, "typedelay 3");
+                let _ = writeln!(stdin, "typehold 1");
                 let _ = writeln!(stdin, "type {}", text);
             }
             let _ = c.wait();
