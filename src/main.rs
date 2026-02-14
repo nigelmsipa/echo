@@ -10,10 +10,21 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 const TEMP_FILE: &str = "/tmp/echo.wav";
+const DATA_DIR: &str = ".local/share/echo";
+const TRANSCRIPT_LOG: &str = "transcripts.log";
+
+
+fn data_dir() -> PathBuf {
+    let home = env::var("HOME").expect("HOME not set");
+    PathBuf::from(home).join(DATA_DIR)
+}
 
 fn main() {
     println!("Echo - Speech-to-Text Daemon");
     println!("----------------------------------------");
+
+    let log_path = data_dir().join(TRANSCRIPT_LOG);
+    println!("Collecting transcripts to {}", log_path.display());
 
     setup_session_env();
     let api_key = load_api_key();
@@ -265,6 +276,7 @@ fn stop_recording(child: &mut Child, api_key: &str) {
     match transcribe(api_key) {
         Ok(text) if !text.is_empty() => {
             println!("Transcribed: {}", text);
+            log_transcript(&text);
             type_text(&text);
             let preview = if text.len() > 50 {
                 format!("{}...", &text[..50])
@@ -356,6 +368,32 @@ fn type_text(text: &str) {
             notify("Echo Error", "dotool failed to type text", "dialog-error");
         }
     }
+}
+
+/// Append a timestamped transcript to the collection log
+fn log_transcript(text: &str) {
+    use std::io::Write;
+    use std::time::SystemTime;
+
+    let dir = data_dir();
+    let _ = fs::create_dir_all(&dir);
+    let path = dir.join(TRANSCRIPT_LOG);
+
+    let timestamp = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(file, "{}\t{}", timestamp, text);
+        println!("Logged transcript ({} entries)", count_lines(&path));
+    }
+}
+
+fn count_lines(path: &PathBuf) -> usize {
+    fs::read_to_string(path)
+        .map(|s| s.lines().count())
+        .unwrap_or(0)
 }
 
 /// Remove temp audio file
